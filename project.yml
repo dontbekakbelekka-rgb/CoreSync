@@ -1,0 +1,51 @@
+name: CoreSync
+options:
+  bundleIdPrefix: com.coresync
+  deploymentTarget:
+    iOS: "17.0"
+targets:
+  CoreSync:
+    type: application
+    platform: iOS
+    sources:
+      - path: CoreSync
+        excludes:
+          - "Config/Secrets.swift.example"
+    info:
+      path: CoreSync/Resources/Info.plist
+      properties:
+        UILaunchScreen: {}
+        NSBluetoothAlwaysUsageDescription: "CoreSync connects to your greenTEG CORE sensor over Bluetooth to record skin and core temperature during a session."
+        NSBluetoothPeripheralUsageDescription: "CoreSync connects to your greenTEG CORE sensor over Bluetooth to record skin and core temperature during a session."
+        UIBackgroundModes:
+          - bluetooth-central
+        UISupportedInterfaceOrientations:
+          - UIInterfaceOrientationPortrait
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.coresync.app
+        SWIFT_VERSION: "5.0"
+        MARKETING_VERSION: "1.0"
+        CURRENT_PROJECT_VERSION: "1"
+        TARGETED_DEVICE_FAMILY: "1"
+  CoreSyncTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources:
+      - path: CoreSyncTests
+    dependencies:
+      - target: CoreSync
+    settings:
+      base:
+        SWIFT_VERSION: "5.0"
+schemes:
+  CoreSync:
+    build:
+      targets:
+        CoreSync: all
+        CoreSyncTests: [test]
+    test:
+      targets:
+        - CoreSyncTests
+    run:
+      config: Debug
