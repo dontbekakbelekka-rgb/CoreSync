@@ -82,8 +82,20 @@ final class CoreSensorManager: NSObject, ObservableObject {
 }
 
 extension CoreSensorManager: CBCentralManagerDelegate {
+    // CBCentralManager's `state` is still .unknown right after init - it only
+    // becomes .poweredOn once this delegate method fires, which happens
+    // asynchronously behind the Bluetooth permission prompt. startScanning()
+    // silently no-ops if called before that (see its guard below), so
+    // ConnectView's onAppear call can easily lose the race against the
+    // permission dialog and never actually start scanning - retrying here
+    // once the state we were actually waiting for arrives is what makes that
+    // race harmless instead of a silent dead end.
     func centralManagerDidUpdateState(_ central: CBCentralManager) {
-        if central.state != .poweredOn {
+        if central.state == .poweredOn {
+            if connectionState != .connected && connectionState != .connecting {
+                startScanning()
+            }
+        } else {
             connectionState = .disconnected
         }
     }
