@@ -14,9 +14,29 @@ private struct TokenResponse: Decodable {
 
 enum SupabaseAuthError: Error {
     case invalidCredentials
+    case server(status: Int, message: String?)
     case network(Error)
     case decoding
     case notAuthenticated
+}
+
+// GoTrue's error body shape, e.g. {"error_description":"Invalid login
+// credentials"} or {"msg":"..."} depending on the failure - decoded so the
+// actual reason reaches the login screen instead of a generic message that
+// looks identical whether the password is wrong or the request itself is
+// malformed.
+private struct GoTrueErrorBody: Decodable {
+    let error: String?
+    let errorDescription: String?
+    let msg: String?
+
+    enum CodingKeys: String, CodingKey {
+        case error
+        case errorDescription = "error_description"
+        case msg
+    }
+
+    var message: String? { errorDescription ?? msg ?? error }
 }
 
 // Talks directly to Supabase's GoTrue REST API (the plain email/password
@@ -63,14 +83,25 @@ final class SupabaseAuth: ObservableObject {
 
             let (data, response) = try await URLSession.shared.data(for: request)
             guard let http = response as? HTTPURLResponse else { throw SupabaseAuthError.network(URLError(.badServerResponse)) }
-            guard http.statusCode == 200 else { throw SupabaseAuthError.invalidCredentials }
+            guard http.statusCode == 200 else {
+                let body = try? JSONDecoder().decode(GoTrueErrorBody.self, from: data)
+                throw SupabaseAuthError.server(status: http.statusCode, message: body?.message)
+            }
 
             let token = try JSONDecoder().decode(TokenResponse.self, from: data)
             store(accessToken: token.accessToken, refreshToken: token.refreshToken, expiresIn: token.expiresIn)
-        } catch SupabaseAuthError.invalidCredentials {
-            lastError = "Incorrect email or password."
+        } catch SupabaseAuthError.server(let status, let message) {
+            // "Invalid login credentials" is GoTrue's real wrong-password
+            // message; anything else here (bad apikey, malformed request,
+            // rate limit, ...) is a different problem and shown verbatim
+            // rather than mislabeled as a credentials error.
+            if message == "Invalid login credentials" {
+                lastError = "Incorrect email or password."
+            } else {
+                lastError = "Server error (\(status)): \(message ?? "no details")"
+            }
         } catch {
-            lastError = "Couldn't reach the server. Check your connection and try again."
+            lastError = "Couldn't reach the server: \(error.localizedDescription)"
         }
     }
 
