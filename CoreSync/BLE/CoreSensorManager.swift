@@ -17,22 +17,15 @@ final class CoreSensorManager: NSObject, ObservableObject {
     // RecordingView wires this to RunSession.record(_:).
     var onReading: ((SensorReading) -> Void)?
 
-    // Pending the real characteristic UUID from greenTEG's "CORE BLE
-    // Implementation Notes" PDF (email info@greenteg.com - see README). The
-    // proprietary Core Body Temperature Service itself
-    // (coreBodyTemperatureServiceUUID below) is documented in greenTEG's
-    // public Wear OS reference app, but not which characteristic under it
-    // carries the computed core-temp value, or its byte format. Once known,
-    // set this and it gets subscribed to exactly like temperature
-    // measurement below - everything else in the app already handles a nil
-    // core temp gracefully, so this is meant to be a one-line swap.
-    var coreTemperatureCharacteristicUUID: CBUUID?
-
     private static let healthThermometerServiceUUID = CBUUID(string: "1809")
     private static let temperatureMeasurementCharacteristicUUID = CBUUID(string: "2A1C")
     private static let batteryServiceUUID = CBUUID(string: "180F")
     private static let batteryLevelCharacteristicUUID = CBUUID(string: "2A19")
     private static let coreBodyTemperatureServiceUUID = CBUUID(string: "00002100-5B1E-4347-B07C-97B514DAE121")
+    // Per "CORE SENSOR - Core Body Temperature Service Specification" v2.2
+    // (CoreBodyTemp/CoreBodyTemp on GitHub) - see CoreBodyTemperatureDecoder
+    // for the payload format.
+    private static let coreTemperatureCharacteristicUUID = CBUUID(string: "00002101-5B1E-4347-B07C-97B514DAE121")
 
     private var central: CBCentralManager!
     private var connectedPeripheral: CBPeripheral?
@@ -138,12 +131,7 @@ extension CoreSensorManager: CBPeripheralDelegate {
             case Self.batteryServiceUUID:
                 peripheral.discoverCharacteristics([Self.batteryLevelCharacteristicUUID], for: service)
             case Self.coreBodyTemperatureServiceUUID:
-                // Service is present on real hardware, but there's nothing to
-                // subscribe to until coreTemperatureCharacteristicUUID is set
-                // (see the property doc comment above).
-                if let coreUUID = coreTemperatureCharacteristicUUID {
-                    peripheral.discoverCharacteristics([coreUUID], for: service)
-                }
+                peripheral.discoverCharacteristics([Self.coreTemperatureCharacteristicUUID], for: service)
             default:
                 break
             }
@@ -159,7 +147,7 @@ extension CoreSensorManager: CBPeripheralDelegate {
             } else if uuid == Self.batteryLevelCharacteristicUUID {
                 peripheral.setNotifyValue(true, for: characteristic)
                 peripheral.readValue(for: characteristic)
-            } else if coreTemperatureCharacteristicUUID != nil, uuid == coreTemperatureCharacteristicUUID {
+            } else if uuid == Self.coreTemperatureCharacteristicUUID {
                 peripheral.setNotifyValue(true, for: characteristic)
             }
         }
@@ -172,19 +160,25 @@ extension CoreSensorManager: CBPeripheralDelegate {
         if uuid == Self.temperatureMeasurementCharacteristicUUID {
             guard let measurement = try? HealthThermometerDecoder.decode(data) else { return }
             currentSkinTempC = measurement.valueCelsius
-            emitReading()
+            emitReading(recordedAt: measurement.timestamp ?? Date())
         } else if uuid == Self.batteryLevelCharacteristicUUID {
             batteryPercent = Int(data.first ?? 0)
-        } else if coreTemperatureCharacteristicUUID != nil, uuid == coreTemperatureCharacteristicUUID {
-            // TODO: decode once greenTEG's Implementation Notes give us the
-            // byte format for this characteristic - currentCoreTempC stays
-            // nil until then.
+        } else if uuid == Self.coreTemperatureCharacteristicUUID {
+            guard let measurement = try? CoreBodyTemperatureDecoder.decode(data) else { return }
+            currentCoreTempC = measurement.coreTempC
+            emitReading(recordedAt: Date())
         }
     }
 
-    private func emitReading() {
+    // recordedAt prefers the sensor's own embedded timestamp (only the
+    // standard Health Thermometer characteristic carries one - the
+    // proprietary Core Body Temperature characteristic has no timestamp
+    // field per its spec) over wall-clock "now", so a reading's recorded
+    // time stays correct if the sensor ever replays buffered/delayed data
+    // instead of a live sample.
+    private func emitReading(recordedAt: Date) {
         let reading = SensorReading(
-            recordedAt: Date(),
+            recordedAt: recordedAt,
             skinTempC: currentSkinTempC,
             coreTempC: currentCoreTempC,
             batteryPct: batteryPercent

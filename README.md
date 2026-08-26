@@ -56,38 +56,35 @@ automatically.
   project) — no paid Apple Developer account needed to run on your own
   phone.
 - **Tests**: `Cmd+U` in Xcode, or `xcodebuild test -scheme CoreSync -destination 'platform=iOS Simulator,name=iPhone 15'`.
-  Covers `HealthThermometerDecoder`'s IEEE-11073 float decode against known
-  byte sequences.
+  Covers `HealthThermometerDecoder`'s IEEE-11073 float decode and
+  `CoreBodyTemperatureDecoder`'s fixed-point decode against known byte
+  sequences.
 
-## Getting real core temperature working
+## Core temperature
 
-Skin temperature and battery level are **fully working** today — the CORE
-sensor exposes the standard Bluetooth SIG Health Thermometer Service
-(`1809`) and Battery Service (`180F`), which `CoreSensorManager` reads
-natively via CoreBluetooth.
+Skin temperature, battery level, and **actual core body temperature** are
+all fully wired up:
 
-The actual **core** temperature (not just skin temp) comes from a
-proprietary greenTEG service (`00002100-5B1E-4347-B07C-97B514DAE121`,
-confirmed present from greenTEG's own open-source Wear OS reference app),
-but the specific characteristic UUID and byte format under that service
-aren't public.
+- Skin temp + battery come from the standard Bluetooth SIG Health
+  Thermometer Service (`1809`) and Battery Service (`180F`).
+- Core temp comes from greenTEG's proprietary Core Body Temperature Service
+  (`00002100-5B1E-4347-B07C-97B514DAE121`), characteristic
+  `00002101-5B1E-4347-B07C-97B514DAE121`, decoded per the public "CORE
+  SENSOR - Core Body Temperature Service Specification" v2.2 (published in
+  the [`CoreBodyTemp/CoreBodyTemp`](https://github.com/CoreBodyTemp/CoreBodyTemp)
+  GitHub repo — no vendor contact needed, it's publicly available). See
+  `CoreSync/BLE/CoreBodyTemperatureDecoder.swift`.
 
-To unlock it:
+That same repo's `CoreTemp Control Point` characteristic (`00002102-...`)
+is for pairing an external ANT+/BLE heart rate monitor to the sensor, not
+implemented here — out of scope for v1, but the spec covers it if it's ever
+wanted.
 
-1. Email **info@greenteg.com** — mention you're a CORE owner building a
-   personal integration and ask for the **"CORE BLE Implementation Notes"**
-   PDF (it's referenced in greenTEG's own public GitHub repos under the
-   `CoreBodyTemp` org, so this is a normal ask).
-2. Once you have the characteristic UUID and decode format, open
-   `CoreSync/BLE/CoreSensorManager.swift` and:
-   - Set `coreTemperatureCharacteristicUUID` to the real `CBUUID`.
-   - Fill in the decode logic in `didUpdateValueFor` where it currently has
-     a `// TODO: decode once greenTEG's Implementation Notes...` comment.
-3. That's it — `currentCoreTempC`, session averages/maxes, and the sync
-   payload all already thread a real value through once it stops being
-   `nil`. Every screen already displays "Pending sensor calibration data"
-   instead of a fake number when it's absent, so nothing else needs to
-   change.
+There's no documented way to pull the sensor's own onboard "logging mode"
+backlog (data buffered while worn without a connection) over BLE — the
+public spec has no download/log command. greenTEG's own app can retrieve
+one, but that appears to be a private mechanism outside this spec, not
+something reproduced here.
 
 ## Architecture
 
@@ -100,6 +97,9 @@ To unlock it:
 - `CoreSync/BLE/HealthThermometerDecoder.swift` — the IEEE-11073 32-bit
   FLOAT decode for the standard Temperature Measurement characteristic,
   unit-tested in `CoreSyncTests/`.
+- `CoreSync/BLE/CoreBodyTemperatureDecoder.swift` — the fixed-point decode
+  for greenTEG's proprietary Core Body Temperature characteristic, also
+  unit-tested.
 - `CoreSync/Session/RunSession.swift` — in-memory recording model and
   summary stat calculations (avg/max) for the current session.
 - `CoreSync/Session/PendingSessionStore.swift` — persists a session to disk
