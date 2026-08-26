@@ -11,7 +11,7 @@ struct SyncResultView: View {
 
     enum Outcome {
         case success(Summary)
-        case failure(summary: Summary, cachedLocally: Bool)
+        case failure(summary: Summary, message: String)
     }
 
     let outcome: Outcome
@@ -45,21 +45,17 @@ struct SyncResultView: View {
                 .foregroundStyle(.green)
             Text("Session synced")
                 .font(.title2.bold())
-        case .failure(_, let cachedLocally):
+        case .failure(_, let message):
             Image(systemName: "exclamationmark.triangle.fill")
                 .font(.system(size: 56))
                 .foregroundStyle(.orange)
             Text("Sync failed")
                 .font(.title2.bold())
-            Text(
-                cachedLocally
-                    ? "No connection - your session was saved on this device. Retry from the connect screen once you're back online."
-                    : "Something went wrong, but your session was saved locally."
-            )
-            .font(.subheadline)
-            .foregroundStyle(.secondary)
-            .multilineTextAlignment(.center)
-            .padding(.horizontal)
+            Text("\(message) Your session was saved on this device — retry from the connect screen once you're back online.")
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+                .padding(.horizontal)
         }
     }
 

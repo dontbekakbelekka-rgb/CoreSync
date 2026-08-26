@@ -88,16 +88,19 @@ final class CoreTempAPI {
         return data
     }
 
+    // No key case conversion: running-dashboard's API routes read the JSON
+    // body in plain camelCase (body?.startedAt, body?.avgSkinTempC, ...) -
+    // snake_case is only how that app's lib/coreTemp.ts talks to Postgres
+    // columns, never the shape of its own request/response bodies. Sending
+    // snake_case here silently dropped every field server-side (each read
+    // as undefined) and made every sync fail.
     private var encoder: JSONEncoder {
         let e = JSONEncoder()
         e.dateEncodingStrategy = .iso8601
-        e.keyEncodingStrategy = .convertToSnakeCase
         return e
     }
 
     private var decoder: JSONDecoder {
-        let d = JSONDecoder()
-        d.keyDecodingStrategy = .convertFromSnakeCase
-        return d
+        JSONDecoder()
     }
 }

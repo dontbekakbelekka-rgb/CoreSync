@@ -162,7 +162,7 @@ struct RecordingView: View {
                 )
                 phase = .result(.success(summary))
             } catch {
-                cacheLocallyAndReport(summary: summary)
+                cacheLocallyAndReport(summary: summary, message: describeSyncError(error))
             }
         }
     }
@@ -170,7 +170,7 @@ struct RecordingView: View {
     // Keeps the recording rather than losing it - the athlete retries from
     // the connect screen next time the app is online, per the "no signal
     // shouldn't lose the run" requirement.
-    private func cacheLocallyAndReport(summary: SyncResultView.Summary) {
+    private func cacheLocallyAndReport(summary: SyncResultView.Summary, message: String) {
         let pending = PendingSession(
             startedAt: session.startedAt,
             endedAt: session.endedAt ?? Date(),
@@ -184,6 +184,24 @@ struct RecordingView: View {
             }
         )
         PendingSessionStore.save(pending)
-        phase = .result(.failure(summary: summary, cachedLocally: true))
+        phase = .result(.failure(summary: summary, message: message))
+    }
+
+    // Surfaces the real failure reason instead of a generic "sync failed" -
+    // a wrong request body (e.g. a JSON key-casing mismatch against the
+    // server) and an actual dropped connection look identical to the athlete
+    // unless the underlying error is shown, which made this exact class of
+    // bug invisible from the app alone once already.
+    private func describeSyncError(_ error: Error) -> String {
+        switch error {
+        case CoreTempAPIError.server(let status, let body):
+            return "Server error (\(status)): \(body.isEmpty ? "no details" : body)"
+        case CoreTempAPIError.network(let underlying):
+            return "Network error: \(underlying.localizedDescription)"
+        case CoreTempAPIError.decoding:
+            return "Unexpected response from the server."
+        default:
+            return error.localizedDescription
+        }
     }
 }
