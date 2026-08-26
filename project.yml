@@ -3,6 +3,14 @@ options:
   bundleIdPrefix: com.coresync
   deploymentTarget:
     iOS: "17.0"
+# Applies to every target below - without this, each `xcodegen generate`
+# rebuilds the .xcodeproj from scratch and silently drops whatever team
+# Xcode's "Automatically manage signing" had picked, breaking the on-device
+# build until it's reselected by hand in Signing & Capabilities.
+settings:
+  base:
+    CODE_SIGN_STYLE: Automatic
+    DEVELOPMENT_TEAM: W8227ZC7JX
 targets:
   CoreSync:
     type: application
