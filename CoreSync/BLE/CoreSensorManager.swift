@@ -158,14 +158,27 @@ extension CoreSensorManager: CBPeripheralDelegate {
 
         let uuid = characteristic.uuid
         if uuid == Self.temperatureMeasurementCharacteristicUUID {
+            // Verified against the official CORE app on real session data:
+            // this characteristic's value tracks core temp almost exactly on
+            // this sensor, not true independent skin temp (the official
+            // app's skin temp is a visibly different, lower, rising curve).
+            // Still used for its embedded timestamp, but its value no longer
+            // feeds currentSkinTempC - see the branch below for the field
+            // actually confirmed correct.
             guard let measurement = try? HealthThermometerDecoder.decode(data) else { return }
-            currentSkinTempC = measurement.valueCelsius
             emitReading(recordedAt: measurement.timestamp ?? Date())
         } else if uuid == Self.batteryLevelCharacteristicUUID {
             batteryPercent = Int(data.first ?? 0)
         } else if uuid == Self.coreTemperatureCharacteristicUUID {
             guard let measurement = try? CoreBodyTemperatureDecoder.decode(data) else { return }
             currentCoreTempC = measurement.coreTempC
+            // The proprietary characteristic's own skin temp field is the
+            // one confirmed to match the official CORE app's skin temp
+            // reading. Left nil (never a stale/wrong fallback) if this
+            // particular notification doesn't carry it.
+            if let skinTempC = measurement.skinTempC {
+                currentSkinTempC = skinTempC
+            }
             emitReading(recordedAt: Date())
         }
     }
